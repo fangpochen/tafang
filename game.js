@@ -1010,6 +1010,12 @@ class Game {
         
         // 预加载资源
         this.preloadResources();
+
+        this.isFromSidebar = false; // 状态，表示是否从侧边栏进入
+        this.btnSidebar = null; // 入口有礼按钮
+        this.ndSidebar = null; // 入口有礼对话框
+        this.btnGotoSidebar = null; // 去侧边栏按钮
+        this.btnGetAward = null; // 领取奖励按钮
     }
 
     preloadResources() {
@@ -1144,7 +1150,7 @@ class Game {
             
             // 检查是否点击了侧边栏礼包按钮
             if (this.isClickSidebarRewardButton(touchX, touchY)) {
-                this.handleSidebarReward();
+                this.showSidebarGuide();
                 return;
             }
 
@@ -1654,6 +1660,21 @@ class Game {
         this.ctx.stroke();
     }
 
+    // 添加绘制圆角矩形的辅助方法
+    drawRoundRect(x, y, width, height, radius) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + radius, y);
+        this.ctx.lineTo(x + width - radius, y);
+        this.ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        this.ctx.lineTo(x + width, y + height - radius);
+        this.ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        this.ctx.lineTo(x + radius, y + height);
+        this.ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        this.ctx.lineTo(x, y + radius);
+        this.ctx.quadraticCurveTo(x, y, x + radius, y);
+        this.ctx.closePath();
+    }
+
     drawUI() {
         // 只在游戏进行中显示游戏状态
         if (this.gameState === 'PLAYING') {
@@ -1901,7 +1922,7 @@ class Game {
 
             // 绘制任务背景面板 - 增加高度以容纳所有内容
             this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.ctx.roundRect(buttonX - 80, buttonY - 100, 160, 180, 10);
+            this.drawRoundRect(buttonX - 80, buttonY - 100, 160, 180, 10);
             this.ctx.fill();
 
             // 绘制任务标题
@@ -1910,10 +1931,10 @@ class Game {
             this.ctx.fillStyle = '#FFD700';
             this.ctx.fillText('每日任务', buttonX, buttonY - 70);
 
-            // 绘制任务说明 - 调整位置，避免与按钮重叠
+            // 绘制任务说明 - 简化为"入口有奖"
             this.ctx.font = '14px Arial';
             this.ctx.fillStyle = '#FFFFFF';
-            this.ctx.fillText('前往侧边栏获得奖励:', buttonX, buttonY - 45);
+            this.ctx.fillText('入口有奖', buttonX, buttonY - 45);
 
             // 绘制按钮背景
             this.ctx.beginPath();
@@ -2156,19 +2177,25 @@ class Game {
 
     handleSidebarReward() {
         if (!this.canGetSidebarReward) {
-            // 添加提示信息
-            tt.showToast({
-                title: '今日已领取奖励，请明天再来',
-                icon: 'none',
-                duration: 2000
+            // 计算剩余冷却时间
+            const now = Date.now();
+            const cooldownRemaining = (this.lastSidebarReward + SIDEBAR_CONFIG.cooldown) - now;
+            const hoursRemaining = Math.ceil(cooldownRemaining / (1000 * 60 * 60));
+            
+            // 显示冷却时间提示
+            tt.showModal({
+                title: '领取冷却中',
+                content: `今日奖励已领取\n\n下次可领取时间：\n${hoursRemaining}小时后\n\n温馨提示：\n• 每日可领取一次\n• 请24小时后再来领取`,
+                confirmText: '我知道了',
+                showCancel: false
             });
             return;
         }
 
-        // 添加任务引导提示
+        // 显示任务指引和奖励说明
         tt.showModal({
             title: '每日任务',
-            content: '完成侧边栏访问即可获得：\n• 100金币\n• 50点城堡生命值\n是否立即前往？',
+            content: '完成侧边栏访问即可获得：\n\n奖励内容：\n• 100金币\n• 50点城堡生命值\n\n任务步骤：\n1. 点击"立即前往"\n2. 在模拟器中找到侧边栏\n3. 点击游戏图标返回\n4. 领取奖励\n\n温馨提示：\n• 每日可领取一次\n• 24小时后可再次领取\n• 请确保从侧边栏进入游戏',
             confirmText: '立即前往',
             cancelText: '稍后再说',
             success: (res) => {
@@ -2206,10 +2233,11 @@ class Game {
             this.canGetSidebarReward = false;
             
             // 显示奖励获得提示
-            tt.showToast({
-                title: '恭喜获得奖励！',
-                icon: 'success',
-                duration: 2000
+            tt.showModal({
+                title: '奖励领取成功',
+                content: `恭喜获得：\n\n• 100金币\n• 50点城堡生命值\n\n温馨提示：\n• 每日可领取一次\n• 24小时后可再次领取\n• 请确保从侧边栏进入游戏`,
+                confirmText: '我知道了',
+                showCancel: false
             });
             
             // 24小时后重置
@@ -2302,6 +2330,92 @@ class Game {
         
         // 恢复上下文状态
         this.ctx.restore();
+    }
+
+    // 添加一个新方法来显示侧边栏指引
+    showSidebarGuide() {
+        tt.showModal({
+            title: '每日任务指引',
+            content: '1. 点击"立即前往"按钮\n2. 在模拟器中找到侧边栏\n3. 点击游戏图标返回\n4. 领取奖励\n\n奖励内容：\n• 100金币\n• 50点城堡生命值\n\n温馨提示：\n• 每日可领取一次\n• 24小时后可再次领取\n• 请确保从侧边栏进入游戏',
+            confirmText: '立即前往',
+            cancelText: '稍后再说',
+            success: (res) => {
+                if (res.confirm) {
+                    // 调用抖音API跳转到侧边栏
+                    tt.navigateToScene({
+                        scene: "sidebar",
+                        success: () => {
+                            console.log('跳转侧边栏成功');
+                            // 跳转成功后,等待用户从侧边栏返回
+                            this.waitForSidebarReturn();
+                        },
+                        fail: (err) => {
+                            console.error('跳转侧边栏失败:', err);
+                            tt.showToast({
+                                title: '跳转失败，请稍后重试',
+                                icon: 'none',
+                                duration: 2000
+                            });
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    start() {
+        tt.onShow((res) => {
+            // 判断用户是否是从侧边栏进来的
+            this.isFromSidebar = (res.launch_from === 'homepage' && res.location === 'sidebar_card');
+            if (this.isFromSidebar) {
+                this.btnGetAward.node.active = true;
+                this.btnGotoSidebar.node.active = false;
+            } else {
+                this.btnGetAward.node.active = false;
+                this.btnGotoSidebar.node.active = true;
+            }
+        });
+
+        tt.checkScene({
+            scene: "sidebar",
+            success: (res) => {
+                this.btnSidebar.node.active = true;
+            },
+            fail: (res) => {
+                this.btnSidebar.node.active = false;
+            }
+        });
+    }
+
+    onbtnOpenSideBarDialog() {
+        this.ndSidebar.active = true;
+    }
+
+    onbtnOpenSideBarCloseDialog() {
+        this.ndSidebar.active = false;
+    }
+
+    onbtnGotoSidebarClick() {
+        tt.navigateToScene({
+            scene: "sidebar",
+            success: (res) => {
+                console.log("跳转侧边栏成功");
+                // 跳转成功后,等待用户从侧边栏返回
+                this.waitForSidebarReturn();
+            },
+            fail: (res) => {
+                console.error("跳转侧边栏失败: ", res);
+                tt.showToast({
+                    title: '跳转失败，请稍后重试',
+                    icon: 'none',
+                    duration: 2000
+                });
+            }
+        });
+    }
+
+    onbtnGetAwardClick() {
+        // 实现获取奖励的逻辑
     }
 }
 
