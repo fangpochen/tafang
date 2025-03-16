@@ -309,11 +309,12 @@ const LEVEL_CONFIG = {
 
 // 添加侧边栏复访配置
 const SIDEBAR_CONFIG = {
-    rewards: {
-        coins: 100,
-        energy: 50
-    },
-    cooldown: 24 * 60 * 60 * 1000, // 24小时冷却时间
+    enabled: true,  // 启用侧边栏功能
+    icon: {
+        x: 60,       // 图标X坐标
+        y: 180,      // 图标Y坐标
+        size: 50     // 图标大小
+    }
 };
 
 // 增强版音频系统，严格按照抖音小游戏官方文档实现
@@ -1011,11 +1012,12 @@ class Game {
         // 预加载资源
         this.preloadResources();
 
-        this.isFromSidebar = false; // 状态，表示是否从侧边栏进入
-        this.btnSidebar = null; // 入口有礼按钮
-        this.ndSidebar = null; // 入口有礼对话框
-        this.btnGotoSidebar = null; // 去侧边栏按钮
-        this.btnGetAward = null; // 领取奖励按钮
+        // 简化侧边栏相关变量
+        this.isFromSidebar = false;         // 是否从侧边栏进入
+        
+        // 介绍界面相关状态
+        this.showIntroduction = false;     // 是否显示介绍界面
+        this.introductionAlpha = 0;        // 介绍界面的透明度，用于淡入效果
     }
 
     preloadResources() {
@@ -1095,9 +1097,7 @@ class Game {
         this.castleHealth = 100;
         this.isPaused = false;
         this.selectedTowerType = 'TOWER1';
-        this.lastSidebarReward = 0;
-        this.canGetSidebarReward = true;
-
+        
         // 初始化触摸事件
         this.initTouchEvents();
         
@@ -1127,13 +1127,15 @@ class Game {
     }
 
     initTouchEvents() {
-        // 用于跟踪是否已经尝试解锁音频
         let audioUnlockAttempted = false;
-        
+    
         tt.onTouchStart(event => {
             const touch = event.touches[0];
             const touchX = touch.clientX;
             const touchY = touch.clientY;
+            
+            // 调试信息
+            console.log('触摸坐标:', touchX, touchY);
             
             // 尝试解锁音频API - 只在第一次触摸时执行
             if (!audioUnlockAttempted) {
@@ -1148,12 +1150,31 @@ class Game {
                 }
             }
             
-            // 检查是否点击了侧边栏礼包按钮
-            if (this.isClickSidebarRewardButton(touchX, touchY)) {
-                this.showSidebarGuide();
+            // 如果介绍界面正在显示，优先处理介绍界面上的交互
+            if (this.showIntroduction) {
+                // 检查是否点击了介绍界面上的"前往侧边栏"按钮
+                if (this.isClickIntroductionButton(touchX, touchY)) {
+                    this.showIntroduction = false; // 关闭介绍界面
+                    this.navigateToSidebar(); // 跳转到侧边栏
+                    return;
+                }
+                
+                // 检查是否点击了介绍界面上的关闭按钮
+                if (this.isClickIntroductionCloseButton(touchX, touchY)) {
+                    this.showIntroduction = false; // 仅关闭介绍界面
+                    return;
+                }
+                
+                // 如果介绍界面正在显示，阻止其他交互
                 return;
             }
-
+            
+            // 检查是否点击了侧边栏奖励按钮
+            if (this.isClickSidebarRewardButton(touchX, touchY)) {
+                this.handleSidebarReward();
+                return;
+            }
+            
             // 检查是否点击了静音按钮
             if (this.isClickMuteButton(touchX, touchY)) {
                 this.toggleMute();
@@ -1463,26 +1484,38 @@ class Game {
         this.drawCastle();
         
         // 5. 绘制防御塔（在城堡之上）
-        this.towers.forEach(tower => tower.draw(this.ctx));
+        this.towers.forEach(tower => {
+            tower.draw(this.ctx);
+        });
         
         // 6. 绘制敌人（在防御塔之上）
-        this.enemies.forEach(enemy => enemy.draw(this.ctx));
+        this.enemies.forEach(enemy => {
+            enemy.draw(this.ctx);
+        });
         
         // 7. 绘制子弹（在敌人之上）
-        this.projectiles.forEach(projectile => projectile.draw(this.ctx));
+        this.projectiles.forEach(projectile => {
+            projectile.draw(this.ctx);
+        });
         
-        // 恢复保存的状态
-        this.ctx.restore();
-        
-        // 8. 绘制特效（在最上层）
+        // 8. 绘制特效（在子弹之上）
         this.effectSystem.draw(this.ctx);
         
-        // 9. 最后绘制UI（在所有游戏元素之上）
+        // 9. 恢复状态并绘制UI（在所有游戏元素之上）
+        this.ctx.restore();
         this.drawUI();
         
-        // 游戏结束检查
-        if (this.gameOver) {
+        // 10. 根据游戏状态绘制不同的屏幕
+        if (this.gameState === 'READY') {
+            // 显示开始按钮
+            // ... 现有代码 ...
+        } else if (this.gameState === 'OVER') {
             this.drawGameOver();
+        }
+        
+        // 11. 绘制介绍界面（最上层）
+        if (this.showIntroduction) {
+            this.drawIntroduction();
         }
     }
 
@@ -1696,6 +1729,38 @@ class Game {
             drawTextWithStroke(`金钱: ${this.money}`, 20, 60);
             drawTextWithStroke(`波数: ${this.wave}`, 20, 90);
             drawTextWithStroke(`关卡: ${this.currentLevel}`, 20, 120);
+            
+            // 绘制简化的侧边栏图标
+            if (SIDEBAR_CONFIG.enabled) {
+                const { x: iconX, y: iconY, size: iconSize } = SIDEBAR_CONFIG.icon;
+                
+                // 图标背景
+                this.ctx.fillStyle = '#4285f4';  // 使用蓝色背景
+                this.ctx.beginPath();
+                this.drawRoundRect(iconX - iconSize/2, iconY - iconSize/2, iconSize, iconSize, 10);
+                this.ctx.fill();
+                this.ctx.strokeStyle = '#ffffff';
+                this.ctx.lineWidth = 2;
+                this.ctx.stroke();
+                
+                // 绘制侧边栏图标（三条横线）
+                this.ctx.strokeStyle = '#ffffff';
+                this.ctx.lineWidth = 3;
+                
+                // 绘制三条横线表示侧边栏
+                for (let i = -10; i <= 10; i += 10) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(iconX - 15, iconY + i);
+                    this.ctx.lineTo(iconX + 15, iconY + i);
+                    this.ctx.stroke();
+                }
+                
+                // 添加侧边栏文字标签
+                this.ctx.fillStyle = '#ff0000';  // 改为红色
+                this.ctx.font = '16px Arial';    // 增大字体
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('入口有礼', iconX, iconY + 35);
+            }
         }
 
         // 绘制静音按钮
@@ -1914,74 +1979,7 @@ class Game {
             this.ctx.fillText('你是最棒的！', config.width/2, config.height/2 + 50);
         }
 
-        // 绘制侧边栏礼包按钮和任务指引
-        if (this.gameState === 'PLAYING') {
-            const buttonX = 60;
-            const buttonY = 250;  // 将按钮位置下移到250
-            const buttonSize = 50;
-
-            // 绘制任务背景面板 - 增加高度以容纳所有内容
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.drawRoundRect(buttonX - 80, buttonY - 100, 160, 180, 10);
-            this.ctx.fill();
-
-            // 绘制任务标题
-            this.ctx.font = 'bold 18px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillStyle = '#FFD700';
-            this.ctx.fillText('每日任务', buttonX, buttonY - 70);
-
-            // 绘制任务说明 - 简化为"入口有奖"
-            this.ctx.font = '14px Arial';
-            this.ctx.fillStyle = '#FFFFFF';
-            this.ctx.fillText('入口有奖', buttonX, buttonY - 45);
-
-            // 绘制按钮背景
-            this.ctx.beginPath();
-            this.ctx.arc(buttonX, buttonY, buttonSize/2, 0, Math.PI * 2);
-            this.ctx.fillStyle = this.canGetSidebarReward ? 'rgba(255, 215, 0, 0.3)' : 'rgba(128, 128, 128, 0.3)';
-            this.ctx.fill();
-            this.ctx.strokeStyle = '#ffffff';
-            this.ctx.lineWidth = 2;
-            this.ctx.stroke();
-
-            // 绘制礼包图标和状态
-            this.ctx.fillStyle = '#ffffff';
-            this.ctx.font = '20px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText(this.canGetSidebarReward ? '领取' : '已领取', buttonX, buttonY + 7);
-
-            // 如果可以领取，添加动画效果和提示
-            if (this.canGetSidebarReward) {
-                const glowSize = buttonSize/2 + Math.sin(Date.now() / 500) * 5;
-                this.ctx.beginPath();
-                this.ctx.arc(buttonX, buttonY, glowSize, 0, Math.PI * 2);
-                this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
-                this.ctx.stroke();
-
-                // 添加点击提示
-                this.ctx.font = '14px Arial';
-                this.ctx.fillStyle = '#FFD700';
-                this.ctx.fillText('点击领取', buttonX, buttonY + 35);
-            } else {
-                // 显示冷却时间
-                const now = Date.now();
-                const cooldownRemaining = (this.lastSidebarReward + SIDEBAR_CONFIG.cooldown) - now;
-                if (cooldownRemaining > 0) {
-                    const hoursRemaining = Math.ceil(cooldownRemaining / (1000 * 60 * 60));
-                    this.ctx.font = '12px Arial';
-                    this.ctx.fillStyle = '#999999';
-                    this.ctx.fillText(`${hoursRemaining}小时后可再次领取`, buttonX, buttonY + 35);
-                }
-            }
-
-            // 绘制奖励内容 - 移到按钮下方
-            this.ctx.font = '14px Arial';
-            this.ctx.fillStyle = '#FFFFFF';
-            this.ctx.fillText('奖励内容：', buttonX, buttonY + 55);
-            this.ctx.fillText('金币 +100', buttonX, buttonY + 75);
-            this.ctx.fillText('城堡生命值 +50', buttonX, buttonY + 95);
-        }
+        // 已删除侧边栏礼包按钮和任务指引绘制代码，不再显示每日任务黑色面板
     }
 
     drawGameOver() {
@@ -2164,10 +2162,11 @@ class Game {
         this.gameState = 'COMPLETE';
     }
 
+    // 以下方法不再使用，但保留以防其他代码引用
     isClickSidebarRewardButton(x, y) {
-        const buttonX = 60;
-        const buttonY = 150;
-        const buttonSize = 50;
+        if (!SIDEBAR_CONFIG.enabled) return false;
+        
+        const { x: buttonX, y: buttonY, size: buttonSize } = SIDEBAR_CONFIG.icon;
         
         return x >= buttonX - buttonSize/2 && 
                x <= buttonX + buttonSize/2 && 
@@ -2176,82 +2175,33 @@ class Game {
     }
 
     handleSidebarReward() {
-        if (!this.canGetSidebarReward) {
-            // 计算剩余冷却时间
-            const now = Date.now();
-            const cooldownRemaining = (this.lastSidebarReward + SIDEBAR_CONFIG.cooldown) - now;
-            const hoursRemaining = Math.ceil(cooldownRemaining / (1000 * 60 * 60));
-            
-            // 显示冷却时间提示
-            tt.showModal({
-                title: '领取冷却中',
-                content: `今日奖励已领取\n\n下次可领取时间：\n${hoursRemaining}小时后\n\n温馨提示：\n• 每日可领取一次\n• 请24小时后再来领取`,
-                confirmText: '我知道了',
-                showCancel: false
-            });
-            return;
-        }
-
-        // 显示任务指引和奖励说明
-        tt.showModal({
-            title: '每日任务',
-            content: '完成侧边栏访问即可获得：\n\n奖励内容：\n• 100金币\n• 50点城堡生命值\n\n任务步骤：\n1. 点击"立即前往"\n2. 在模拟器中找到侧边栏\n3. 点击游戏图标返回\n4. 领取奖励\n\n温馨提示：\n• 每日可领取一次\n• 24小时后可再次领取\n• 请确保从侧边栏进入游戏',
-            confirmText: '立即前往',
-            cancelText: '稍后再说',
-            success: (res) => {
-                if (res.confirm) {
-                    // 调用抖音API跳转到侧边栏
-                    tt.navigateToScene({
-                        scene: "sidebar",
-                        success: () => {
-                            console.log('跳转侧边栏成功');
-                            // 跳转成功后,等待用户从侧边栏返回
-                            this.waitForSidebarReturn();
-                        },
-                        fail: (err) => {
-                            console.error('跳转侧边栏失败:', err);
-                            tt.showToast({
-                                title: '跳转失败，请稍后重试',
-                                icon: 'none',
-                                duration: 2000
-                            });
-                        }
-                    });
-                }
-            }
-        });
+        if (!SIDEBAR_CONFIG.enabled) return;
+        
+        // 显示介绍界面，而不是直接跳转到侧边栏
+        this.showIntroduction = true;
+        this.introductionAlpha = 0;
+        
+        console.log('显示侧边栏介绍界面');
     }
 
-    waitForSidebarReturn() {
-        tt.onShow(() => {
-            // 给予奖励
-            this.money += SIDEBAR_CONFIG.rewards.coins;
-            this.castleHealth = Math.min(100, this.castleHealth + SIDEBAR_CONFIG.rewards.energy);
-            
-            // 设置冷却时间
-            this.lastSidebarReward = Date.now();
-            this.canGetSidebarReward = false;
-            
-            // 显示奖励获得提示
-            tt.showModal({
-                title: '奖励领取成功',
-                content: `恭喜获得：\n\n• 100金币\n• 50点城堡生命值\n\n温馨提示：\n• 每日可领取一次\n• 24小时后可再次领取\n• 请确保从侧边栏进入游戏`,
-                confirmText: '我知道了',
-                showCancel: false
-            });
-            
-            // 24小时后重置
-            setTimeout(() => {
-                this.canGetSidebarReward = true;
-                // 添加可领取提示
-                if (this.gameState === 'PLAYING') {
-                    tt.showToast({
-                        title: '每日任务可领取啦！',
-                        icon: 'none',
-                        duration: 2000
-                    });
-                }
-            }, SIDEBAR_CONFIG.cooldown);
+    // 跳转到侧边栏方法
+    navigateToSidebar() {
+        if (!SIDEBAR_CONFIG.enabled) return;
+        
+        // 跳转到侧边栏
+        tt.navigateToScene({
+            scene: "sidebar",
+            success: () => {
+                console.log('跳转侧边栏成功');
+            },
+            fail: (err) => {
+                console.error('跳转侧边栏失败:', err);
+                tt.showToast({
+                    title: '跳转失败，请稍后重试',
+                    icon: 'none',
+                    duration: 2000
+                });
+            }
         });
     }
 
@@ -2334,89 +2284,198 @@ class Game {
 
     // 添加一个新方法来显示侧边栏指引
     showSidebarGuide() {
-        tt.showModal({
-            title: '每日任务指引',
-            content: '1. 点击"立即前往"按钮\n2. 在模拟器中找到侧边栏\n3. 点击游戏图标返回\n4. 领取奖励\n\n奖励内容：\n• 100金币\n• 50点城堡生命值\n\n温馨提示：\n• 每日可领取一次\n• 24小时后可再次领取\n• 请确保从侧边栏进入游戏',
-            confirmText: '立即前往',
-            cancelText: '稍后再说',
-            success: (res) => {
-                if (res.confirm) {
-                    // 调用抖音API跳转到侧边栏
-                    tt.navigateToScene({
-                        scene: "sidebar",
-                        success: () => {
-                            console.log('跳转侧边栏成功');
-                            // 跳转成功后,等待用户从侧边栏返回
-                            this.waitForSidebarReturn();
-                        },
-                        fail: (err) => {
-                            console.error('跳转侧边栏失败:', err);
-                            tt.showToast({
-                                title: '跳转失败，请稍后重试',
-                                icon: 'none',
-                                duration: 2000
-                            });
-                        }
-                    });
-                }
-            }
-        });
+        // 简化的侧边栏引导功能
+        this.showIntroduction = true;
+        this.introductionAlpha = 0;
+        
+        console.log('显示侧边栏引导');
     }
 
+    // 绘制介绍界面
+    drawIntroduction() {
+        if (!this.showIntroduction) return;
+        
+        // 如果正在显示介绍界面，更新透明度（淡入效果）
+        if (this.introductionAlpha < 0.9) {
+            this.introductionAlpha += 0.05;
+        }
+        
+        const { width, height } = config;
+        
+        // 设置半透明黑色背景
+        this.ctx.fillStyle = `rgba(0, 0, 0, ${this.introductionAlpha * 0.7})`;
+        this.ctx.fillRect(0, 0, width, height);
+        
+        // 绘制介绍卡片
+        const cardWidth = width * 0.8;
+        const cardHeight = height * 0.7;
+        const cardX = (width - cardWidth) / 2;
+        const cardY = (height - cardHeight) / 2;
+        
+        // 绘制圆角矩形卡片背景
+        this.ctx.fillStyle = `rgba(255, 255, 255, ${this.introductionAlpha})`;
+        this.ctx.beginPath();
+        this.drawRoundRect(cardX, cardY, cardWidth, cardHeight, 20);
+        this.ctx.fill();
+        
+        // 绘制卡片边框
+        this.ctx.strokeStyle = `rgba(233, 113, 136, ${this.introductionAlpha})`;
+        this.ctx.lineWidth = 5;
+        this.ctx.stroke();
+        
+        // 绘制标题
+        this.ctx.fillStyle = `rgba(233, 113, 136, ${this.introductionAlpha})`;
+        this.ctx.font = 'bold 28px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('欢迎来到五星级塔防', width / 2, cardY + 50);
+        
+        // 绘制分割线
+        this.ctx.beginPath();
+        this.ctx.moveTo(cardX + 40, cardY + 80);
+        this.ctx.lineTo(cardX + cardWidth - 40, cardY + 80);
+        this.ctx.strokeStyle = `rgba(200, 200, 200, ${this.introductionAlpha})`;
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+        
+        // 绘制介绍内容
+        this.ctx.fillStyle = `rgba(50, 50, 50, ${this.introductionAlpha})`;
+        this.ctx.font = '18px Arial'; // 减小字体大小以适应卡片宽度
+        this.ctx.textAlign = 'left';
+        
+        const textX = cardX + 30; // 稍微减小左边距
+        let textY = cardY + 120; // 调整起始Y位置
+        const lineHeight = 28; // 减小行高
+        
+        // 将内容拆分成更多更短的行
+        const introText = [
+            '• 在这款精彩的塔防游戏中，',
+            '  你将体验独特的防御策略',
+            '',
+            '• 建造强大的防御塔，阻止',
+            '  敌人到达你的城堡',
+            '',
+            '• 每波敌人都更加强大，',
+            '  需要不同的战略应对',
+            '',
+            '• 在侧边栏获取更多奖励',
+            '  和提示！',
+            '',
+            '• 从抖音首页侧边栏进入',
+            '  游戏可以领取金钱100！'
+        ];
+        
+        introText.forEach(line => {
+            this.ctx.fillText(line, textX, textY);
+            textY += lineHeight;
+        });
+        
+        // 绘制金币图标（在最后一行文字旁）
+        if (this.resourceLoader.getImage('coin')) {
+            const coinSize = 20; // 稍微减小金币图标大小
+            const coinX = textX + this.ctx.measureText('  游戏可以领取金钱').width + 5;
+            const coinY = textY - lineHeight + coinSize/2 - 2;
+            this.ctx.drawImage(
+                this.resourceLoader.getImage('coin'),
+                coinX, 
+                coinY - coinSize/2,
+                coinSize,
+                coinSize
+            );
+        }
+        
+        // 绘制去侧边栏按钮
+        const buttonWidth = cardWidth * 0.8;
+        const buttonHeight = 50; // 减小按钮高度
+        const buttonX = (width - buttonWidth) / 2;
+        const buttonY = cardY + cardHeight - 80; // 调整按钮位置
+        
+        // 按钮背景
+        this.ctx.fillStyle = `rgba(233, 113, 136, ${this.introductionAlpha})`;
+        this.ctx.beginPath();
+        this.drawRoundRect(buttonX, buttonY, buttonWidth, buttonHeight, 15);
+        this.ctx.fill();
+        
+        // 按钮文字
+        this.ctx.fillStyle = `rgba(255, 255, 255, ${this.introductionAlpha})`;
+        this.ctx.font = 'bold 20px Arial'; // 调整按钮文字大小
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('前往侧边栏领取奖励', width / 2, buttonY + buttonHeight / 2 + 7);
+        
+        // 绘制关闭按钮
+        const closeSize = 44;
+        const closeX = cardX + cardWidth - 30;
+        const closeY = cardY + 30;
+        
+        this.ctx.fillStyle = `rgba(200, 200, 200, ${this.introductionAlpha})`;
+        this.ctx.beginPath();
+        this.ctx.arc(closeX, closeY, closeSize / 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        this.ctx.strokeStyle = 'white';
+        this.ctx.lineWidth = 3;
+        this.ctx.beginPath();
+        this.ctx.moveTo(closeX - 12, closeY - 12);
+        this.ctx.lineTo(closeX + 12, closeY + 12);
+        this.ctx.moveTo(closeX + 12, closeY - 12);
+        this.ctx.lineTo(closeX - 12, closeY + 12);
+        this.ctx.stroke();
+    }
+    
+    // 检查是否点击了介绍界面上的按钮
+    isClickIntroductionButton(x, y) {
+        if (!this.showIntroduction) return false;
+        
+        const { width, height } = config;
+        const cardWidth = width * 0.8;
+        const cardHeight = height * 0.7;
+        const cardY = (height - cardHeight) / 2;
+        
+        // 检查是否点击了"前往侧边栏"按钮
+        const buttonWidth = cardWidth * 0.8;
+        const buttonHeight = 60;
+        const buttonX = (width - buttonWidth) / 2;
+        const buttonY = cardY + cardHeight - 100;
+        
+        return (
+            x >= buttonX && 
+            x <= buttonX + buttonWidth && 
+            y >= buttonY && 
+            y <= buttonY + buttonHeight
+        );
+    }
+    
+    // 检查是否点击了介绍界面的关闭按钮
+    isClickIntroductionCloseButton(x, y) {
+        if (!this.showIntroduction) return false;
+        
+        const { width, height } = config;
+        const cardWidth = width * 0.8;
+        const cardHeight = height * 0.7;
+        const cardX = (width - cardWidth) / 2;
+        const cardY = (height - cardHeight) / 2;
+        
+        const closeSize = 44;
+        const closeX = cardX + cardWidth - 30;
+        const closeY = cardY + 30;
+        
+        // 检查与圆形关闭按钮的距离
+        const distance = Math.sqrt(Math.pow(x - closeX, 2) + Math.pow(y - closeY, 2));
+        return distance <= closeSize / 2;
+    }
+    
     start() {
-        tt.onShow((res) => {
-            // 判断用户是否是从侧边栏进来的
-            this.isFromSidebar = (res.launch_from === 'homepage' && res.location === 'sidebar_card');
-            if (this.isFromSidebar) {
-                this.btnGetAward.node.active = true;
-                this.btnGotoSidebar.node.active = false;
-            } else {
-                this.btnGetAward.node.active = false;
-                this.btnGotoSidebar.node.active = true;
-            }
-        });
-
-        tt.checkScene({
-            scene: "sidebar",
-            success: (res) => {
-                this.btnSidebar.node.active = true;
-            },
-            fail: (res) => {
-                this.btnSidebar.node.active = false;
-            }
-        });
+        if (SIDEBAR_CONFIG.enabled) {
+            // 仅检测是否从侧边栏进入
+            tt.onShow((res) => {
+                this.isFromSidebar = (res.launch_from === 'homepage' && res.location === 'sidebar_card');
+                if (this.isFromSidebar) {
+                    console.log('用户从侧边栏进入游戏');
+                }
+            });
+        }
     }
 
-    onbtnOpenSideBarDialog() {
-        this.ndSidebar.active = true;
-    }
-
-    onbtnOpenSideBarCloseDialog() {
-        this.ndSidebar.active = false;
-    }
-
-    onbtnGotoSidebarClick() {
-        tt.navigateToScene({
-            scene: "sidebar",
-            success: (res) => {
-                console.log("跳转侧边栏成功");
-                // 跳转成功后,等待用户从侧边栏返回
-                this.waitForSidebarReturn();
-            },
-            fail: (res) => {
-                console.error("跳转侧边栏失败: ", res);
-                tt.showToast({
-                    title: '跳转失败，请稍后重试',
-                    icon: 'none',
-                    duration: 2000
-                });
-            }
-        });
-    }
-
-    onbtnGetAwardClick() {
-        // 实现获取奖励的逻辑
-    }
+    // 删除复杂的waitForSidebarReturn方法，不需要奖励逻辑
 }
 
 class Enemy {
