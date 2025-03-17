@@ -180,7 +180,10 @@ const RESOURCE_CONFIG = {
         knight3_walk3: getResourcePath('assets/images/3_KNIGHT/_WALK/_WALK_003.png'),
         knight3_walk4: getResourcePath('assets/images/3_KNIGHT/_WALK/_WALK_004.png'),
         knight3_walk5: getResourcePath('assets/images/3_KNIGHT/_WALK/_WALK_005.png'),
-        knight3_walk6: getResourcePath('assets/images/3_KNIGHT/_WALK/_WALK_006.png')
+        knight3_walk6: getResourcePath('assets/images/3_KNIGHT/_WALK/_WALK_006.png'),
+        // 添加侧边栏引导图片
+        sidebarGuide: getResourcePath('assets/images/sidebar_guide.jpg'),
+        sidebarGuide2: getResourcePath('assets/images/sidebar_guide2.jpg')
     }
 };
 
@@ -1018,6 +1021,8 @@ class Game {
         // 介绍界面相关状态
         this.showIntroduction = false;     // 是否显示介绍界面
         this.introductionAlpha = 0;        // 介绍界面的透明度，用于淡入效果
+        this.returnedFromSidebar = false;  // 是否从侧边栏返回
+        this.rewardCollected = false;      // 是否已领取奖励
     }
 
     preloadResources() {
@@ -1152,10 +1157,16 @@ class Game {
             
             // 如果介绍界面正在显示，优先处理介绍界面上的交互
             if (this.showIntroduction) {
-                // 检查是否点击了介绍界面上的"前往侧边栏"按钮
+                // 检查是否点击了介绍界面上的按钮
                 if (this.isClickIntroductionButton(touchX, touchY)) {
-                    this.showIntroduction = false; // 关闭介绍界面
-                    this.navigateToSidebar(); // 跳转到侧边栏
+                    if (this.returnedFromSidebar) {
+                        // 如果是从侧边栏返回后，点击按钮领取奖励
+                        this.collectReward();
+                    } else {
+                        // 如果是首次显示引导，点击按钮跳转到侧边栏
+                        this.showIntroduction = false; // 关闭介绍界面
+                        this.navigateToSidebar(); // 跳转到侧边栏
+                    }
                     return;
                 }
                 
@@ -2188,6 +2199,9 @@ class Game {
     navigateToSidebar() {
         if (!SIDEBAR_CONFIG.enabled) return;
         
+        // 设置状态，表示即将从侧边栏返回
+        this.returnedFromSidebar = true;
+        
         // 跳转到侧边栏
         tt.navigateToScene({
             scene: "sidebar",
@@ -2201,8 +2215,38 @@ class Game {
                     icon: 'none',
                     duration: 2000
                 });
+                
+                // 如果跳转失败，重置状态
+                this.returnedFromSidebar = false;
             }
         });
+    }
+    
+    // 用户领取奖励
+    collectReward() {
+        if (this.rewardCollected) {
+            // 如果已经领取过奖励，提示用户
+            tt.showToast({
+                title: '您已领取过奖励',
+                icon: 'none',
+                duration: 2000
+            });
+            return;
+        }
+        
+        // 给玩家增加金钱
+        this.money += 100;
+        this.rewardCollected = true;
+        
+        // 显示获得奖励提示
+        tt.showToast({
+            title: '恭喜获得100金币!',
+            icon: 'success',
+            duration: 2000
+        });
+        
+        // 关闭介绍界面
+        this.showIntroduction = false;
     }
 
     // 添加一个新方法来绘制网格区域的半透明覆盖层
@@ -2306,119 +2350,72 @@ class Game {
         this.ctx.fillStyle = `rgba(0, 0, 0, ${this.introductionAlpha * 0.7})`;
         this.ctx.fillRect(0, 0, width, height);
         
-        // 绘制介绍卡片
-        const cardWidth = width * 0.8;
-        const cardHeight = height * 0.7;
-        const cardX = (width - cardWidth) / 2;
-        const cardY = (height - cardHeight) / 2;
+        // 根据状态选择显示哪个引导图片
+        let guideImageKey = this.returnedFromSidebar ? 'sidebarGuide2' : 'sidebarGuide';
+        const guideImage = this.resourceLoader.getImage(guideImageKey);
         
-        // 绘制圆角矩形卡片背景
-        this.ctx.fillStyle = `rgba(255, 255, 255, ${this.introductionAlpha})`;
-        this.ctx.beginPath();
-        this.drawRoundRect(cardX, cardY, cardWidth, cardHeight, 20);
-        this.ctx.fill();
-        
-        // 绘制卡片边框
-        this.ctx.strokeStyle = `rgba(233, 113, 136, ${this.introductionAlpha})`;
-        this.ctx.lineWidth = 5;
-        this.ctx.stroke();
-        
-        // 绘制标题
-        this.ctx.fillStyle = `rgba(233, 113, 136, ${this.introductionAlpha})`;
-        this.ctx.font = 'bold 28px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText('欢迎来到五星级塔防', width / 2, cardY + 50);
-        
-        // 绘制分割线
-        this.ctx.beginPath();
-        this.ctx.moveTo(cardX + 40, cardY + 80);
-        this.ctx.lineTo(cardX + cardWidth - 40, cardY + 80);
-        this.ctx.strokeStyle = `rgba(200, 200, 200, ${this.introductionAlpha})`;
-        this.ctx.lineWidth = 2;
-        this.ctx.stroke();
-        
-        // 绘制介绍内容
-        this.ctx.fillStyle = `rgba(50, 50, 50, ${this.introductionAlpha})`;
-        this.ctx.font = '18px Arial'; // 减小字体大小以适应卡片宽度
-        this.ctx.textAlign = 'left';
-        
-        const textX = cardX + 30; // 稍微减小左边距
-        let textY = cardY + 120; // 调整起始Y位置
-        const lineHeight = 28; // 减小行高
-        
-        // 将内容拆分成更多更短的行
-        const introText = [
-            '• 在这款精彩的塔防游戏中，',
-            '  你将体验独特的防御策略',
-            '',
-            '• 建造强大的防御塔，阻止',
-            '  敌人到达你的城堡',
-            '',
-            '• 每波敌人都更加强大，',
-            '  需要不同的战略应对',
-            '',
-            '• 在侧边栏获取更多奖励',
-            '  和提示！',
-            '',
-            '• 从抖音首页侧边栏进入',
-            '  游戏可以领取金钱100！'
-        ];
-        
-        introText.forEach(line => {
-            this.ctx.fillText(line, textX, textY);
-            textY += lineHeight;
-        });
-        
-        // 绘制金币图标（在最后一行文字旁）
-        if (this.resourceLoader.getImage('coin')) {
-            const coinSize = 20; // 稍微减小金币图标大小
-            const coinX = textX + this.ctx.measureText('  游戏可以领取金钱').width + 5;
-            const coinY = textY - lineHeight + coinSize/2 - 2;
-            this.ctx.drawImage(
-                this.resourceLoader.getImage('coin'),
-                coinX, 
-                coinY - coinSize/2,
-                coinSize,
-                coinSize
-            );
+        if (guideImage) {
+            // 根据屏幕大小调整图片尺寸，保持原始比例
+            const imgRatio = guideImage.width / guideImage.height;
+            const cardWidth = width * 0.9; // 稍微扩大卡片宽度以适应图片
+            const cardHeight = cardWidth / imgRatio;
+            const cardX = (width - cardWidth) / 2;
+            const cardY = (height - cardHeight) / 2;
+            
+            // 绘制图片，使用透明度过渡效果
+            this.ctx.globalAlpha = this.introductionAlpha;
+            this.ctx.drawImage(guideImage, cardX, cardY, cardWidth, cardHeight);
+            this.ctx.globalAlpha = 1.0;
+            
+            // 根据状态选择按钮文本
+            const buttonText = this.returnedFromSidebar ? '领取奖励' : '进入侧边栏';
+            
+            // 绘制按钮，放在图片下方
+            const buttonWidth = cardWidth * 0.6;
+            const buttonHeight = 60;
+            const buttonX = (width - buttonWidth) / 2;
+            const buttonY = cardY + cardHeight - buttonHeight - 40;
+            
+            // 按钮背景颜色根据状态改变
+            this.ctx.fillStyle = this.returnedFromSidebar 
+                ? `rgba(59, 230, 171, ${this.introductionAlpha})` // 第二张图片用绿色按钮
+                : `rgba(59, 200, 171, ${this.introductionAlpha})`; // 第一张图片用浅绿色按钮
+                
+            this.ctx.beginPath();
+            this.drawRoundRect(buttonX, buttonY, buttonWidth, buttonHeight, 15);
+            this.ctx.fill();
+            
+            // 按钮文字
+            this.ctx.fillStyle = `rgba(255, 255, 255, ${this.introductionAlpha})`;
+            this.ctx.font = 'bold 24px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(buttonText, width / 2, buttonY + buttonHeight / 2 + 8);
+            
+            // 绘制关闭按钮
+            const closeSize = 44;
+            const closeX = cardX + cardWidth - 30;
+            const closeY = cardY + 30;
+            
+            this.ctx.fillStyle = `rgba(0, 0, 0, ${this.introductionAlpha * 0.5})`;
+            this.ctx.beginPath();
+            this.ctx.arc(closeX, closeY, closeSize / 2, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            this.ctx.strokeStyle = 'white';
+            this.ctx.lineWidth = 3;
+            this.ctx.beginPath();
+            this.ctx.moveTo(closeX - 12, closeY - 12);
+            this.ctx.lineTo(closeX + 12, closeY + 12);
+            this.ctx.moveTo(closeX + 12, closeY - 12);
+            this.ctx.lineTo(closeX - 12, closeY + 12);
+            this.ctx.stroke();
+        } else {
+            // 如果图片未加载，显示错误信息
+            this.ctx.fillStyle = `rgba(255, 255, 255, ${this.introductionAlpha})`;
+            this.ctx.font = 'bold 20px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('侧边栏引导图片加载失败，请重试', width / 2, height / 2);
         }
-        
-        // 绘制去侧边栏按钮
-        const buttonWidth = cardWidth * 0.8;
-        const buttonHeight = 50; // 减小按钮高度
-        const buttonX = (width - buttonWidth) / 2;
-        const buttonY = cardY + cardHeight - 80; // 调整按钮位置
-        
-        // 按钮背景
-        this.ctx.fillStyle = `rgba(233, 113, 136, ${this.introductionAlpha})`;
-        this.ctx.beginPath();
-        this.drawRoundRect(buttonX, buttonY, buttonWidth, buttonHeight, 15);
-        this.ctx.fill();
-        
-        // 按钮文字
-        this.ctx.fillStyle = `rgba(255, 255, 255, ${this.introductionAlpha})`;
-        this.ctx.font = 'bold 20px Arial'; // 调整按钮文字大小
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText('前往侧边栏领取奖励', width / 2, buttonY + buttonHeight / 2 + 7);
-        
-        // 绘制关闭按钮
-        const closeSize = 44;
-        const closeX = cardX + cardWidth - 30;
-        const closeY = cardY + 30;
-        
-        this.ctx.fillStyle = `rgba(200, 200, 200, ${this.introductionAlpha})`;
-        this.ctx.beginPath();
-        this.ctx.arc(closeX, closeY, closeSize / 2, 0, Math.PI * 2);
-        this.ctx.fill();
-        
-        this.ctx.strokeStyle = 'white';
-        this.ctx.lineWidth = 3;
-        this.ctx.beginPath();
-        this.ctx.moveTo(closeX - 12, closeY - 12);
-        this.ctx.lineTo(closeX + 12, closeY + 12);
-        this.ctx.moveTo(closeX + 12, closeY - 12);
-        this.ctx.lineTo(closeX - 12, closeY + 12);
-        this.ctx.stroke();
     }
     
     // 检查是否点击了介绍界面上的按钮
@@ -2426,22 +2423,34 @@ class Game {
         if (!this.showIntroduction) return false;
         
         const { width, height } = config;
-        const cardWidth = width * 0.8;
-        const cardHeight = height * 0.7;
-        const cardY = (height - cardHeight) / 2;
         
-        // 检查是否点击了"前往侧边栏"按钮
-        const buttonWidth = cardWidth * 0.8;
-        const buttonHeight = 60;
-        const buttonX = (width - buttonWidth) / 2;
-        const buttonY = cardY + cardHeight - 100;
+        // 获取引导图片
+        const guideImage = this.resourceLoader.getImage('sidebarGuide') || this.resourceLoader.getImage('sidebarGuide2');
         
-        return (
-            x >= buttonX && 
-            x <= buttonX + buttonWidth && 
-            y >= buttonY && 
-            y <= buttonY + buttonHeight
-        );
+        if (guideImage) {
+            // 计算图片尺寸和位置
+            const imgRatio = guideImage.width / guideImage.height;
+            const cardWidth = width * 0.9;
+            const cardHeight = cardWidth / imgRatio;
+            const cardX = (width - cardWidth) / 2;
+            const cardY = (height - cardHeight) / 2;
+            
+            // 计算按钮的位置
+            const buttonWidth = cardWidth * 0.6;
+            const buttonHeight = 60;
+            const buttonX = (width - buttonWidth) / 2;
+            const buttonY = cardY + cardHeight - buttonHeight - 40;
+            
+            // 检查点击是否在按钮范围内
+            return (
+                x >= buttonX && 
+                x <= buttonX + buttonWidth && 
+                y >= buttonY && 
+                y <= buttonY + buttonHeight
+            );
+        }
+        
+        return false;
     }
     
     // 检查是否点击了介绍界面的关闭按钮
@@ -2449,18 +2458,29 @@ class Game {
         if (!this.showIntroduction) return false;
         
         const { width, height } = config;
-        const cardWidth = width * 0.8;
-        const cardHeight = height * 0.7;
-        const cardX = (width - cardWidth) / 2;
-        const cardY = (height - cardHeight) / 2;
         
-        const closeSize = 44;
-        const closeX = cardX + cardWidth - 30;
-        const closeY = cardY + 30;
+        // 获取引导图片
+        const guideImage = this.resourceLoader.getImage('sidebarGuide') || this.resourceLoader.getImage('sidebarGuide2');
         
-        // 检查与圆形关闭按钮的距离
-        const distance = Math.sqrt(Math.pow(x - closeX, 2) + Math.pow(y - closeY, 2));
-        return distance <= closeSize / 2;
+        if (guideImage) {
+            // 计算图片尺寸和位置
+            const imgRatio = guideImage.width / guideImage.height;
+            const cardWidth = width * 0.9;
+            const cardHeight = cardWidth / imgRatio;
+            const cardX = (width - cardWidth) / 2;
+            const cardY = (height - cardHeight) / 2;
+            
+            // 计算关闭按钮位置
+            const closeSize = 44;
+            const closeX = cardX + cardWidth - 30;
+            const closeY = cardY + 30;
+            
+            // 检查与圆形关闭按钮的距离
+            const distance = Math.sqrt(Math.pow(x - closeX, 2) + Math.pow(y - closeY, 2));
+            return distance <= closeSize / 2;
+        }
+        
+        return false;
     }
     
     start() {
