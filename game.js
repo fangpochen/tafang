@@ -126,6 +126,19 @@ const VISUAL_CONFIG = {
             duration: 500,
             particleCount: 10
         },
+        bigExplosion: {
+            colors: ['#ff0000', '#ff8800', '#ffff00', '#ffffff'],
+            duration: 800,
+            particleCount: 20,
+            maxSize: 8,
+            soundEffect: 'explosion'
+        },
+        magicExplosion: {
+            colors: ['#8800ff', '#0088ff', '#00ffff'],
+            duration: 600,
+            particleCount: 15,
+            glow: true
+        },
         heal: {
             color: '#00ff00',
             duration: 300
@@ -307,6 +320,21 @@ const LEVEL_CONFIG = {
         ],
         startMoney: 450,  // 增加初始金钱
         waveInterval: 7000  // 增加波次间隔
+    },
+    4: {  // 第四关：闪电关
+        waves: [
+            { type: 'TANK', count: 5, interval: 700 },     // 第1波：5个坦克怪 (加快)
+            { type: 'FAST', count: 8, interval: 350 },     // 第2波：8个快速怪 (加快)
+            { type: 'NORMAL', count: 12, interval: 450 },  // 第3波：12个普通怪 (加快)
+            { type: 'TANK', count: 4, interval: 600 },     // 第4波：4个坦克怪 (加快)
+            { type: 'NORMAL', count: 15, interval: 400 },  // 第5波：15个普通怪 (加快)
+            { type: 'FAST', count: 10, interval: 300 },    // 第6波：10个快速怪 (加快)
+            { type: 'TANK', count: 6, interval: 550 },     // 第7波：6个坦克怪 (加快)
+            { type: 'NORMAL', count: 20, interval: 350 },  // 第8波：20个普通怪 (加快)
+            { type: 'BOSS', count: 1, interval: 0 }        // 第9波：1个BOSS
+        ],
+        startMoney: 500,  // 增加初始金钱，应对更快的怪物
+        waveInterval: 5000  // 减少波次间隔，提高节奏感
     }
 };
 
@@ -1023,6 +1051,10 @@ class Game {
         this.introductionAlpha = 0;        // 介绍界面的透明度，用于淡入效果
         this.returnedFromSidebar = false;  // 是否从侧边栏返回
         this.rewardCollected = false;      // 是否已领取奖励
+        
+        // 添加爆炸效果管理
+        this.explosions = [];
+        this.lastUpdateTime = Date.now();
     }
 
     preloadResources() {
@@ -1331,6 +1363,9 @@ class Game {
         console.log('游戏启动...');
         this.gameState = 'PLAYING';
         
+        // 添加开场特效
+        this.createStartExplosions();
+        
         // 确保音频系统已初始化
         if (this.audioSystem) {
             // 显示提示，帮助用户理解音频初始化过程
@@ -1360,17 +1395,91 @@ class Game {
         this.wave = 1;
         this.spawnWave();
     }
+    
+    // 创建游戏开始时的特效
+    createStartExplosions() {
+        console.log('创建游戏开始特效');
+        
+        // 清除之前的爆炸效果
+        this.explosions = [];
+        
+        // 创建从底部到顶部的彩色爆炸链
+        const columns = 5;  // 创建5列爆炸
+        const rows = 4;     // 每列4个爆炸
+        const width = config.width;
+        const height = config.height;
+        
+        // 计算各列的x坐标
+        const columnPositions = [];
+        for (let i = 0; i < columns; i++) {
+            columnPositions.push(width * (i + 1) / (columns + 1));
+        }
+        
+        // 为每一列创建从下到上的爆炸
+        for (let col = 0; col < columns; col++) {
+            const x = columnPositions[col];
+            
+            for (let row = 0; row < rows; row++) {
+                // 底部到顶部的y坐标
+                const y = height - (height * (row + 1) / (rows + 2));
+                
+                // 延迟创建爆炸，使其从下向上依次出现
+                const delay = 100 * row + (Math.random() < 0.5 ? 0 : 50);  // 添加一些随机性
+                
+                setTimeout(() => {
+                    // 选择一个随机类型的爆炸
+                    const types = ['normal', 'magic', 'ice', 'fire'];
+                    const type = types[Math.floor(Math.random() * types.length)];
+                    
+                    // 创建爆炸效果
+                    this.createExplosion(x, y, type, {
+                        particleCount: 15,
+                        duration: 500 + Math.random() * 200,
+                        addGlow: Math.random() > 0.3,
+                        addShockwave: Math.random() > 0.7
+                    });
+                }, delay + col * 70);  // 每列也有时间差
+            }
+        }
+        
+        // 最后在中心位置添加一个"五星级塔防"的闪亮特效
+        setTimeout(() => {
+            // 在中心创建大型爆炸
+            this.createExplosion(width/2, height/2 - 50, 'magic', {
+                particleCount: 40,
+                duration: 1200,
+                addGlow: true,
+                addShockwave: true
+            });
+            
+            // 添加几个围绕的小爆炸
+            for (let i = 0; i < 5; i++) {  // 五个爆炸象征"五星级"
+                const angle = (Math.PI * 2 * i) / 5;
+                const starX = width/2 + Math.cos(angle) * 100;
+                const starY = height/2 - 50 + Math.sin(angle) * 70;
+                
+                setTimeout(() => {
+                    this.createExplosion(starX, starY, 'fire', {
+                        particleCount: 20,
+                        duration: 800,
+                        addGlow: true,
+                        addShockwave: false
+                    });
+                }, i * 100 + 500);
+            }
+        }, columns * rows * 50 + 200);
+    }
 
     spawnWave() {
         const levelConfig = LEVEL_CONFIG[this.currentLevel];
         if (!levelConfig || this.currentWave >= levelConfig.waves.length) {
             // 当前关卡的所有波次都完成了
-            if (this.currentLevel < 3) {
+            if (this.currentLevel < 4) {  // 修改这里，从3改为4
                 // 还有下一关
                 this.levelCompleted = true;
                 this.showLevelComplete();
                 return;
-            } else if (this.currentLevel === 3 && !this.gameOver) {
+            } else if (this.currentLevel === 4 && !this.gameOver) {  // 修改这里，从3改为4
                 // 通关了！
                 this.showGameComplete();
                 return;
@@ -1417,6 +1526,10 @@ class Game {
     }
 
     resetGame() {
+        // 添加重新开始的爆炸特效
+        this.createResetExplosions();
+        
+        // 重置游戏状态
         this.castleHealth = 100;  // 重置城堡生命值
         this.health = 100;
         this.money = LEVEL_CONFIG[this.currentLevel].startMoney;
@@ -1431,9 +1544,94 @@ class Game {
         this.audioSystem.playBGM();
         this.spawnWave();
     }
+    
+    // 创建重新开始时的爆炸特效
+    createResetExplosions() {
+        console.log('创建重新开始爆炸特效');
+        
+        // 清除之前所有的爆炸效果
+        this.explosions = [];
+        
+        // 创建环形分布的小型爆炸，形成一个圆形图案
+        const centerX = config.width / 2;
+        const centerY = config.height / 2;
+        const radius = 120;  // 爆炸分布的半径
+        const explosionCount = 12;  // 环绕的爆炸数量
+        
+        // 创建环形爆炸
+        for (let i = 0; i < explosionCount; i++) {
+            const angle = (Math.PI * 2 * i) / explosionCount;
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius;
+            
+            // 添加延迟，使爆炸按顺序出现，形成环绕效果
+            setTimeout(() => {
+                // 随机选择爆炸类型
+                const types = ['fire', 'magic', 'ice'];
+                const type = types[Math.floor(Math.random() * types.length)];
+                
+                // 创建小型爆炸
+                this.createExplosion(x, y, type, {
+                    particleCount: 15,
+                    duration: 600,
+                    addGlow: true,
+                    addShockwave: false
+                });
+            }, i * 50);  // 按顺序触发，时间间隔50ms
+        }
+        
+        // 最后在中心添加一个大爆炸
+        setTimeout(() => {
+            this.createExplosion(centerX, centerY, 'magic', {
+                particleCount: 30,
+                duration: 1000,
+                addGlow: true,
+                addShockwave: true
+            });
+            
+            // 添加一个魔法气泡上升效果
+            for (let i = 0; i < 8; i++) {
+                setTimeout(() => {
+                    const bubbleX = centerX + (Math.random() - 0.5) * 60;
+                    const bubbleY = centerY + (Math.random() - 0.5) * 60;
+                    
+                    this.createExplosion(bubbleX, bubbleY, 'magic', {
+                        particleCount: 10,
+                        duration: 800,
+                        addGlow: Math.random() > 0.5,
+                        addShockwave: false
+                    });
+                }, 300 + i * 100);
+            }
+        }, explosionCount * 50 + 100);  // 在环形爆炸之后添加中心爆炸
+    }
 
     update() {
+        // 计算时间增量
+        const now = Date.now();
+        const deltaTime = now - this.lastUpdateTime;
+        this.lastUpdateTime = now;
+        
+        // 更新爆炸效果 - 无论游戏状态如何都需要更新
+        for (let i = this.explosions.length - 1; i >= 0; i--) {
+            this.explosions[i].update(deltaTime);
+            if (this.explosions[i].isFinished()) {
+                this.explosions.splice(i, 1);
+            }
+        }
+        
+        // 如果游戏不在进行中，只更新爆炸效果后就返回
         if (this.gameState !== 'PLAYING' || this.isPaused) return;
+
+        // 检查是否是最后一波且敌人全部消灭
+        const levelConfig = LEVEL_CONFIG[this.currentLevel];
+        if (levelConfig && this.currentWave === levelConfig.waves.length - 1 && 
+            this.enemies.length === 0 && !this.levelCompleted) {
+            console.log('最后一波敌人全部消灭，关卡完成！');
+            this.levelCompleted = true;
+            this.showLevelComplete();
+            return;
+        }
 
         // 更新敌人
         this.enemies.forEach((enemy, index) => {
@@ -1512,11 +1710,16 @@ class Game {
         // 8. 绘制特效（在子弹之上）
         this.effectSystem.draw(this.ctx);
         
-        // 9. 恢复状态并绘制UI（在所有游戏元素之上）
+        // 9. 绘制爆炸效果（在特效之上）
+        this.explosions.forEach(explosion => {
+            explosion.draw(this.ctx);
+        });
+        
+        // 10. 恢复状态并绘制UI（在所有游戏元素之上）
         this.ctx.restore();
         this.drawUI();
         
-        // 10. 根据游戏状态绘制不同的屏幕
+        // 11. 根据游戏状态绘制不同的屏幕
         if (this.gameState === 'READY') {
             // 显示开始按钮
             // ... 现有代码 ...
@@ -1524,7 +1727,7 @@ class Game {
             this.drawGameOver();
         }
         
-        // 11. 绘制介绍界面（最上层）
+        // 12. 绘制介绍界面（最上层）
         if (this.showIntroduction) {
             this.drawIntroduction();
         }
@@ -1973,8 +2176,15 @@ class Game {
             this.ctx.font = '48px Arial';
             this.ctx.textAlign = 'center';
             this.ctx.fillText(`第 ${this.currentLevel} 关完成！`, config.width/2, config.height/2);
-            this.ctx.font = '24px Arial';
-            this.ctx.fillText('准备进入下一关...', config.width/2, config.height/2 + 50);
+            
+            // 添加对第四关的特殊提示
+            if (this.currentLevel === 3) {
+                this.ctx.font = '24px Arial';
+                this.ctx.fillText('准备进入闪电关！怪物会更快...', config.width/2, config.height/2 + 50);
+            } else {
+                this.ctx.font = '24px Arial';
+                this.ctx.fillText('准备进入下一关...', config.width/2, config.height/2 + 50);
+            }
         }
 
         // 添加游戏通关提示
@@ -1982,12 +2192,49 @@ class Game {
             this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
             this.ctx.fillRect(0, 0, config.width, config.height);
             
-            this.ctx.fillStyle = '#ffffff';
-            this.ctx.font = '48px Arial';
+            // 创建闪烁特效
+            const glowIntensity = 0.7 + 0.3 * Math.sin(Date.now() / 200);
+            
+            // 绘制主标题（带闪烁辉光）
+            this.ctx.shadowColor = `rgba(255, 215, 0, ${glowIntensity})`;
+            this.ctx.shadowBlur = 20;
+            this.ctx.fillStyle = '#FFD700'; // 金色
+            this.ctx.font = 'bold 48px Arial';
             this.ctx.textAlign = 'center';
-            this.ctx.fillText('恭喜通关！', config.width/2, config.height/2);
-            this.ctx.font = '24px Arial';
-            this.ctx.fillText('你是最棒的！', config.width/2, config.height/2 + 50);
+            this.ctx.fillText('恭喜通关！', config.width/2, config.height/2 - 50);
+            
+            // 重置阴影效果
+            this.ctx.shadowColor = 'transparent';
+            this.ctx.shadowBlur = 0;
+            
+            // 显示最终分数和额外信息
+            this.ctx.font = '28px Arial';
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.fillText('你征服了闪电关卡！', config.width/2, config.height/2);
+            
+            if (this.finalScore) {
+                this.ctx.fillText(`最终得分: ${this.finalScore}`, config.width/2, config.height/2 + 40);
+            }
+            
+            this.ctx.font = '20px Arial';
+            this.ctx.fillText('你是塔防大师！', config.width/2, config.height/2 + 80);
+            
+            // 绘制重新开始按钮
+            const buttonWidth = 200;
+            const buttonHeight = 60;
+            const buttonX = config.width/2 - buttonWidth/2;
+            const buttonY = config.height/2 + 120;
+            
+            this.ctx.fillStyle = '#4285f4';
+            this.drawRoundRect(buttonX, buttonY, buttonWidth, buttonHeight, 10);
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+            
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = 'bold 22px Arial';
+            this.ctx.fillText('再玩一次', config.width/2, buttonY + buttonHeight/2 + 7);
         }
 
         // 已删除侧边栏礼包按钮和任务指引绘制代码，不再显示每日任务黑色面板
@@ -2169,8 +2416,186 @@ class Game {
         }, 3000);
     }
 
+    // 添加创建爆炸效果的方法
+    createExplosion(x, y, type = 'normal', options = {}) {
+        const explosion = new Explosion(x, y, type, options);
+        this.explosions.push(explosion);
+        return explosion;
+    }
+    
+    // 创建火山喷发效果
+    createVolcano(x, y, duration = 5000, intensity = 'medium') {
+        console.log('创建火山喷发效果');
+        
+        // 先创建一个基础的火山口
+        this.createExplosion(x, y, 'fire', {
+            particleCount: 20,
+            duration: 800,
+            addGlow: true,
+            addShockwave: true
+        });
+        
+        // 根据强度设置参数
+        let particleCount, interval, speedMultiplier;
+        switch(intensity) {
+            case 'low':
+                particleCount = 10;
+                interval = 300;
+                speedMultiplier = 0.8;
+                break;
+            case 'high':
+                particleCount = 25;
+                interval = 100;
+                speedMultiplier = 1.5;
+                break;
+            case 'medium':
+            default:
+                particleCount = 15;
+                interval = 200;
+                speedMultiplier = 1.0;
+        }
+        
+        // 持续喷发的计时器
+        let elapsedTime = 0;
+        const startTime = Date.now();
+        
+        // 创建喷发间隔计时器
+        const eruption = setInterval(() => {
+            // 计算已经过去的时间
+            elapsedTime = Date.now() - startTime;
+            
+            // 如果超过持续时间，停止喷发
+            if (elapsedTime >= duration) {
+                clearInterval(eruption);
+                
+                // 火山喷发结束，添加一个结束爆炸
+                this.createExplosion(x, y, 'fire', {
+                    particleCount: particleCount * 2,
+                    duration: 1500,
+                    addGlow: true,
+                    addShockwave: true
+                });
+                return;
+            }
+            
+            // 创建火山喷发效果
+            this.createExplosion(x, y, 'volcano', {
+                particleCount: particleCount + Math.floor(Math.random() * 10),
+                duration: 1500,
+                addGlow: Math.random() > 0.5,
+                gravity: true,
+                resistance: true
+            });
+            
+            // 偶尔添加烟雾效果
+            if (Math.random() > 0.7) {
+                // 在火山口附近随机位置添加烟雾
+                const smokeX = x + (Math.random() - 0.5) * 30;
+                const smokeY = y - Math.random() * 50;
+                
+                this.createExplosion(smokeX, smokeY, 'death', {
+                    particleCount: 10 + Math.floor(Math.random() * 5),
+                    duration: 2000,
+                    addGlow: false,
+                    addShockwave: false,
+                    resistance: true
+                });
+            }
+            
+            // 偶尔添加岩浆飞溅效果
+            if (Math.random() > 0.8) {
+                // 随机决定飞溅方向
+                const splashX = x + (Math.random() - 0.5) * 100;
+                const splashY = y - Math.random() * 100;
+                
+                this.createExplosion(splashX, splashY, 'fire', {
+                    particleCount: 5 + Math.floor(Math.random() * 5),
+                    duration: 1000,
+                    addGlow: true,
+                    addShockwave: false
+                });
+            }
+            
+        }, interval);
+        
+        return eruption; // 返回定时器ID，以便需要时可以提前停止
+    }
+
     showGameComplete() {
         this.gameState = 'COMPLETE';
+        
+        // 使用不同类型的爆炸效果创建更华丽的通关特效
+        
+        // 中心大爆炸
+        this.createExplosion(config.width/2, config.height/2, 'fire', {
+            particleCount: 40,
+            duration: 1500,
+            addGlow: true,
+            addShockwave: true,
+            resistance: true
+        });
+        
+        // 添加几个小型爆炸
+        setTimeout(() => {
+            this.createExplosion(config.width/2 - 100, config.height/2 - 50, 'magic', {
+                particleCount: 20,
+                duration: 1000
+            });
+        }, 300);
+        
+        setTimeout(() => {
+            this.createExplosion(config.width/2 + 100, config.height/2 - 30, 'normal', {
+                particleCount: 25,
+                duration: 1200
+            });
+        }, 600);
+        
+        setTimeout(() => {
+            this.createExplosion(config.width/2 - 50, config.height/2 + 100, 'ice', {
+                particleCount: 30,
+                duration: 900
+            });
+        }, 900);
+        
+        // 添加一些随机位置的小爆炸
+        for (let i = 0; i < 5; i++) {
+            setTimeout(() => {
+                const x = Math.random() * config.width;
+                const y = Math.random() * (config.height * 0.7);
+                const types = ['normal', 'fire', 'ice', 'magic'];
+                const randomType = types[Math.floor(Math.random() * types.length)];
+                this.createExplosion(x, y, randomType, {
+                    particleCount: 15 + Math.floor(Math.random() * 10),
+                    duration: 800 + Math.random() * 400
+                });
+            }, 1200 + i * 300);
+        }
+        
+        // 同时也保留一些原始的简单爆炸特效，创造多层次的视觉效果
+        for (let i = 0; i < 10; i++) {
+            setTimeout(() => {
+                const x = Math.random() * config.width;
+                const y = Math.random() * config.height * 0.7;
+                this.effectSystem.addExplosion(x, y);
+            }, i * 200);
+        }
+        
+        // 计算最终得分
+        this.finalScore = this.money + this.castleHealth * 10;
+        console.log('游戏通关！总分：', this.finalScore);
+        
+        // 播放胜利音效（如果有）
+        try {
+            if (this.audioSystem && !this.isMuted) {
+                // 增加音量以示庆祝
+                if (this.audioSystem.bgm) {
+                    const originalVolume = this.audioSystem.bgm.volume;
+                    this.audioSystem.bgm.volume = Math.min(1.0, originalVolume * 1.5);
+                }
+            }
+        } catch (e) {
+            console.error('播放胜利音效失败:', e);
+        }
     }
 
     // 以下方法不再使用，但保留以防其他代码引用
@@ -2328,7 +2753,9 @@ class Game {
 
     // 添加一个新方法来显示侧边栏指引
     showSidebarGuide() {
-        // 简化的侧边栏引导功能
+        if (!SIDEBAR_CONFIG.enabled) return;
+        
+        // 显示文字指引介绍界面
         this.showIntroduction = true;
         this.introductionAlpha = 0;
         
@@ -2350,72 +2777,104 @@ class Game {
         this.ctx.fillStyle = `rgba(0, 0, 0, ${this.introductionAlpha * 0.7})`;
         this.ctx.fillRect(0, 0, width, height);
         
-        // 根据状态选择显示哪个引导图片
-        let guideImageKey = this.returnedFromSidebar ? 'sidebarGuide2' : 'sidebarGuide';
-        const guideImage = this.resourceLoader.getImage(guideImageKey);
+        // 创建文字指引卡片
+        const cardWidth = width * 0.9;
+        const cardHeight = height * 0.6;
+        const cardX = (width - cardWidth) / 2;
+        const cardY = (height - cardHeight) / 2;
         
-        if (guideImage) {
-            // 根据屏幕大小调整图片尺寸，保持原始比例
-            const imgRatio = guideImage.width / guideImage.height;
-            const cardWidth = width * 0.9; // 稍微扩大卡片宽度以适应图片
-            const cardHeight = cardWidth / imgRatio;
-            const cardX = (width - cardWidth) / 2;
-            const cardY = (height - cardHeight) / 2;
+        // 绘制卡片背景
+        this.ctx.globalAlpha = this.introductionAlpha;
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.beginPath();
+        this.drawRoundRect(cardX, cardY, cardWidth, cardHeight, 15);
+        this.ctx.fill();
+        
+        // 绘制标题
+        this.ctx.fillStyle = '#333333';
+        this.ctx.font = 'bold 28px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('侧边栏任务指引', width / 2, cardY + 50);
+        
+        // 绘制分割线
+        this.ctx.strokeStyle = '#dddddd';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.moveTo(cardX + 30, cardY + 70);
+        this.ctx.lineTo(cardX + cardWidth - 30, cardY + 70);
+        this.ctx.stroke();
+        
+        // 绘制三步骤指引
+        this.ctx.font = 'bold 22px Arial';
+        this.ctx.textAlign = 'left';
+        this.ctx.fillStyle = '#333333';
+        
+        // 步骤1
+        this.ctx.fillText('第一步：点击侧边栏图标', cardX + 40, cardY + 120);
+        this.ctx.font = '18px Arial';
+        this.ctx.fillStyle = '#666666';
+        this.ctx.fillText('点击游戏右侧的侧边栏入口图标', cardX + 60, cardY + 150);
+        
+        // 步骤2
+        this.ctx.font = 'bold 22px Arial';
+        this.ctx.fillStyle = '#333333';
+        this.ctx.fillText('第二步：点击五星级塔防', cardX + 40, cardY + 200);
+        this.ctx.font = '18px Arial';
+        this.ctx.fillStyle = '#666666';
+        this.ctx.fillText('在抖音侧边栏中找到并点击"五星级塔防"图标', cardX + 60, cardY + 230);
+        
+        // 步骤3
+        this.ctx.font = 'bold 22px Arial';
+        this.ctx.fillStyle = '#333333';
+        this.ctx.fillText('第三步：领取奖励', cardX + 40, cardY + 280);
+        this.ctx.font = '18px Arial';
+        this.ctx.fillStyle = '#666666';
+        this.ctx.fillText('返回游戏后自动获得金币和能量奖励', cardX + 60, cardY + 310);
+        
+        // 根据状态选择按钮文本
+        const buttonText = this.returnedFromSidebar ? '领取奖励' : '前往侧边栏';
+        
+        // 绘制按钮，放在卡片下方
+        const buttonWidth = cardWidth * 0.6;
+        const buttonHeight = 60;
+        const buttonX = (width - buttonWidth) / 2;
+        const buttonY = cardY + cardHeight - buttonHeight - 40;
+        
+        // 按钮背景颜色
+        this.ctx.fillStyle = this.returnedFromSidebar 
+            ? `rgba(255, 50, 50, ${this.introductionAlpha})` // 红色按钮
+            : `rgba(50, 120, 255, ${this.introductionAlpha})`; // 蓝色按钮
             
-            // 绘制图片，使用透明度过渡效果
-            this.ctx.globalAlpha = this.introductionAlpha;
-            this.ctx.drawImage(guideImage, cardX, cardY, cardWidth, cardHeight);
-            this.ctx.globalAlpha = 1.0;
-            
-            // 根据状态选择按钮文本
-            const buttonText = this.returnedFromSidebar ? '领取奖励' : '进入侧边栏';
-            
-            // 绘制按钮，放在图片下方
-            const buttonWidth = cardWidth * 0.6;
-            const buttonHeight = 60;
-            const buttonX = (width - buttonWidth) / 2;
-            const buttonY = cardY + cardHeight - buttonHeight - 40;
-            
-            // 按钮背景颜色根据状态改变
-            this.ctx.fillStyle = this.returnedFromSidebar 
-                ? `rgba(59, 230, 171, ${this.introductionAlpha})` // 第二张图片用绿色按钮
-                : `rgba(59, 200, 171, ${this.introductionAlpha})`; // 第一张图片用浅绿色按钮
-                
-            this.ctx.beginPath();
-            this.drawRoundRect(buttonX, buttonY, buttonWidth, buttonHeight, 15);
-            this.ctx.fill();
-            
-            // 按钮文字
-            this.ctx.fillStyle = `rgba(255, 255, 255, ${this.introductionAlpha})`;
-            this.ctx.font = 'bold 24px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText(buttonText, width / 2, buttonY + buttonHeight / 2 + 8);
-            
-            // 绘制关闭按钮
-            const closeSize = 44;
-            const closeX = cardX + cardWidth - 30;
-            const closeY = cardY + 30;
-            
-            this.ctx.fillStyle = `rgba(0, 0, 0, ${this.introductionAlpha * 0.5})`;
-            this.ctx.beginPath();
-            this.ctx.arc(closeX, closeY, closeSize / 2, 0, Math.PI * 2);
-            this.ctx.fill();
-            
-            this.ctx.strokeStyle = 'white';
-            this.ctx.lineWidth = 3;
-            this.ctx.beginPath();
-            this.ctx.moveTo(closeX - 12, closeY - 12);
-            this.ctx.lineTo(closeX + 12, closeY + 12);
-            this.ctx.moveTo(closeX + 12, closeY - 12);
-            this.ctx.lineTo(closeX - 12, closeY + 12);
-            this.ctx.stroke();
-        } else {
-            // 如果图片未加载，显示错误信息
-            this.ctx.fillStyle = `rgba(255, 255, 255, ${this.introductionAlpha})`;
-            this.ctx.font = 'bold 20px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText('侧边栏引导图片加载失败，请重试', width / 2, height / 2);
-        }
+        this.ctx.beginPath();
+        this.drawRoundRect(buttonX, buttonY, buttonWidth, buttonHeight, 15);
+        this.ctx.fill();
+        
+        // 按钮文字
+        this.ctx.fillStyle = `rgba(255, 255, 255, ${this.introductionAlpha})`;
+        this.ctx.font = 'bold 24px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(buttonText, width / 2, buttonY + buttonHeight / 2 + 8);
+        
+        // 绘制关闭按钮
+        const closeSize = 44;
+        const closeX = cardX + cardWidth - 30;
+        const closeY = cardY + 30;
+        
+        this.ctx.fillStyle = `rgba(0, 0, 0, ${this.introductionAlpha * 0.5})`;
+        this.ctx.beginPath();
+        this.ctx.arc(closeX, closeY, closeSize / 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        this.ctx.strokeStyle = 'white';
+        this.ctx.lineWidth = 3;
+        this.ctx.beginPath();
+        this.ctx.moveTo(closeX - 12, closeY - 12);
+        this.ctx.lineTo(closeX + 12, closeY + 12);
+        this.ctx.moveTo(closeX + 12, closeY - 12);
+        this.ctx.lineTo(closeX - 12, closeY + 12);
+        this.ctx.stroke();
+        
+        this.ctx.globalAlpha = 1.0;
     }
     
     // 检查是否点击了介绍界面上的按钮
@@ -2424,33 +2883,25 @@ class Game {
         
         const { width, height } = config;
         
-        // 获取引导图片
-        const guideImage = this.resourceLoader.getImage('sidebarGuide') || this.resourceLoader.getImage('sidebarGuide2');
+        // 计算卡片尺寸和位置
+        const cardWidth = width * 0.9;
+        const cardHeight = height * 0.6;
+        const cardX = (width - cardWidth) / 2;
+        const cardY = (height - cardHeight) / 2;
         
-        if (guideImage) {
-            // 计算图片尺寸和位置
-            const imgRatio = guideImage.width / guideImage.height;
-            const cardWidth = width * 0.9;
-            const cardHeight = cardWidth / imgRatio;
-            const cardX = (width - cardWidth) / 2;
-            const cardY = (height - cardHeight) / 2;
-            
-            // 计算按钮的位置
-            const buttonWidth = cardWidth * 0.6;
-            const buttonHeight = 60;
-            const buttonX = (width - buttonWidth) / 2;
-            const buttonY = cardY + cardHeight - buttonHeight - 40;
-            
-            // 检查点击是否在按钮范围内
-            return (
-                x >= buttonX && 
-                x <= buttonX + buttonWidth && 
-                y >= buttonY && 
-                y <= buttonY + buttonHeight
-            );
-        }
+        // 计算按钮的位置
+        const buttonWidth = cardWidth * 0.6;
+        const buttonHeight = 60;
+        const buttonX = (width - buttonWidth) / 2;
+        const buttonY = cardY + cardHeight - buttonHeight - 40;
         
-        return false;
+        // 检查点击是否在按钮范围内
+        return (
+            x >= buttonX && 
+            x <= buttonX + buttonWidth && 
+            y >= buttonY && 
+            y <= buttonY + buttonHeight
+        );
     }
     
     // 检查是否点击了介绍界面的关闭按钮
@@ -2459,28 +2910,20 @@ class Game {
         
         const { width, height } = config;
         
-        // 获取引导图片
-        const guideImage = this.resourceLoader.getImage('sidebarGuide') || this.resourceLoader.getImage('sidebarGuide2');
+        // 计算卡片尺寸和位置
+        const cardWidth = width * 0.9;
+        const cardHeight = height * 0.6;
+        const cardX = (width - cardWidth) / 2;
+        const cardY = (height - cardHeight) / 2;
         
-        if (guideImage) {
-            // 计算图片尺寸和位置
-            const imgRatio = guideImage.width / guideImage.height;
-            const cardWidth = width * 0.9;
-            const cardHeight = cardWidth / imgRatio;
-            const cardX = (width - cardWidth) / 2;
-            const cardY = (height - cardHeight) / 2;
-            
-            // 计算关闭按钮位置
-            const closeSize = 44;
-            const closeX = cardX + cardWidth - 30;
-            const closeY = cardY + 30;
-            
-            // 检查与圆形关闭按钮的距离
-            const distance = Math.sqrt(Math.pow(x - closeX, 2) + Math.pow(y - closeY, 2));
-            return distance <= closeSize / 2;
-        }
+        // 计算关闭按钮位置
+        const closeSize = 44;
+        const closeX = cardX + cardWidth - 30;
+        const closeY = cardY + 30;
         
-        return false;
+        // 检查与圆形关闭按钮的距离
+        const distance = Math.sqrt(Math.pow(x - closeX, 2) + Math.pow(y - closeY, 2));
+        return distance <= closeSize / 2;
     }
     
     start() {
@@ -2779,10 +3222,87 @@ class EffectSystem {
         }
     }
 
+    addBigExplosion(x, y) {
+        const effect = VISUAL_CONFIG.effects.bigExplosion;
+        // 播放爆炸音效
+        try {
+            if (game.audioSystem && !game.isMuted && effect.soundEffect) {
+                // 如果有爆炸音效，播放它
+                // 此处仅为示例，实际游戏中需要实现音效播放
+                console.log('播放爆炸音效');
+            }
+        } catch (e) {
+            console.error('播放爆炸音效失败:', e);
+        }
+        
+        for (let i = 0; i < effect.particleCount; i++) {
+            const angle = (Math.PI * 2 * i) / effect.particleCount;
+            const speed = 3 + Math.random() * 3;
+            const size = 3 + Math.random() * (effect.maxSize || 5);
+            this.effects.push({
+                type: 'bigExplosion',
+                x: x,
+                y: y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                color: effect.colors[Math.floor(Math.random() * effect.colors.length)],
+                size: size,
+                life: effect.duration,
+                maxLife: effect.duration
+            });
+        }
+        
+        // 添加一个中心光晕
+        this.effects.push({
+            type: 'glow',
+            x: x,
+            y: y,
+            vx: 0,
+            vy: 0,
+            color: '#ffffff',
+            size: 40,
+            life: effect.duration / 2,
+            maxLife: effect.duration / 2
+        });
+    }
+    
+    addMagicExplosion(x, y) {
+        const effect = VISUAL_CONFIG.effects.magicExplosion;
+        
+        for (let i = 0; i < effect.particleCount; i++) {
+            // 使用螺旋线而不是直线
+            const angle = (Math.PI * 4 * i) / effect.particleCount;
+            const speed = 2 + Math.random() * 2;
+            const size = 2 + Math.random() * 4;
+            this.effects.push({
+                type: 'magicExplosion',
+                x: x,
+                y: y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                color: effect.colors[Math.floor(Math.random() * effect.colors.length)],
+                size: size,
+                life: effect.duration,
+                maxLife: effect.duration,
+                angle: angle,
+                spin: (Math.random() * 0.1) - 0.05,
+                glow: effect.glow
+            });
+        }
+    }
+
     update() {
         this.effects = this.effects.filter(effect => {
             effect.x += effect.vx;
             effect.y += effect.vy;
+            
+            // 如果效果有旋转属性，应用旋转
+            if (effect.spin) {
+                effect.angle += effect.spin;
+                effect.vx = Math.cos(effect.angle) * Math.sqrt(effect.vx*effect.vx + effect.vy*effect.vy);
+                effect.vy = Math.sin(effect.angle) * Math.sqrt(effect.vx*effect.vx + effect.vy*effect.vy);
+            }
+            
             effect.life -= 16; // 假设60fps
             return effect.life > 0;
         });
@@ -2792,12 +3312,283 @@ class EffectSystem {
         this.effects.forEach(effect => {
             const alpha = effect.life / effect.maxLife;
             ctx.globalAlpha = alpha;
+            
+            // 如果是发光效果，添加阴影
+            if (effect.type === 'glow' || effect.glow) {
+                ctx.shadowColor = effect.color;
+                ctx.shadowBlur = effect.size;
+            }
+            
             ctx.beginPath();
             ctx.arc(effect.x, effect.y, effect.size, 0, Math.PI * 2);
             ctx.fillStyle = effect.color;
             ctx.fill();
+            
+            // 重置阴影
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
         });
         ctx.globalAlpha = 1;
+    }
+}
+
+// 爆炸类 - 用于创建更复杂的爆炸效果
+class Explosion {
+    constructor(x, y, type = 'normal', options = {}) {
+        this.x = x;
+        this.y = y;
+        this.type = type;
+        this.options = options;
+        this.particles = [];
+        this.life = 0;
+        this.maxLife = options.duration || 800;
+        this.isActive = true;
+        
+        // 根据类型初始化
+        this.init();
+    }
+    
+    init() {
+        // 粒子数量
+        const particleCount = this.options.particleCount || 20;
+        
+        // 根据爆炸类型设置不同的颜色和行为
+        let colors = ['#ff0000', '#ff8800', '#ffff00'];
+        let sizeRange = [2, 6];
+        let speedRange = [1, 4];
+        
+        switch(this.type) {
+            case 'fire':
+                colors = ['#ff0000', '#ff4400', '#ff8800', '#ffaa00'];
+                sizeRange = [3, 8];
+                speedRange = [1, 3];
+                this.maxLife = this.options.duration || 1000;
+                break;
+            case 'ice':
+                colors = ['#00ccff', '#00ffff', '#88ffff', '#ffffff'];
+                sizeRange = [2, 5];
+                speedRange = [0.5, 2];
+                this.maxLife = this.options.duration || 1200;
+                break;
+            case 'magic':
+                colors = ['#8800ff', '#0088ff', '#00ffff', '#ff00ff'];
+                sizeRange = [2, 6];
+                speedRange = [1, 3];
+                this.maxLife = this.options.duration || 900;
+                break;
+            case 'death':
+                colors = ['#000000', '#333333', '#666666', '#999999'];
+                sizeRange = [3, 7];
+                speedRange = [0.8, 2.5];
+                this.maxLife = this.options.duration || 1100;
+                break;
+            case 'volcano':
+                colors = ['#ff0000', '#ff4400', '#ff6600', '#ff8800', '#333333', '#666666'];
+                sizeRange = [3, 10];
+                speedRange = [2, 6];
+                this.maxLife = this.options.duration || 2000;
+                break;
+        }
+        
+        // 创建粒子
+        for (let i = 0; i < particleCount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = speedRange[0] + Math.random() * (speedRange[1] - speedRange[0]);
+            const size = sizeRange[0] + Math.random() * (sizeRange[1] - sizeRange[0]);
+            
+            // 为火山喷发类型特殊处理角度，使粒子主要向上喷发
+            let finalAngle = angle;
+            if (this.type === 'volcano') {
+                // 角度范围主要集中在上半部分 (-PI/4 到 -3PI/4)
+                finalAngle = -Math.PI/2 + (Math.random() - 0.5) * Math.PI/2;
+            }
+            
+            this.particles.push({
+                x: this.x,
+                y: this.y,
+                vx: Math.cos(finalAngle) * speed,
+                vy: Math.sin(finalAngle) * speed,
+                size: size,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                life: this.maxLife,
+                alpha: 1
+            });
+        }
+        
+        // 添加中心光晕
+        if (this.options.addGlow !== false) {
+            let glowColor;
+            switch(this.type) {
+                case 'fire': glowColor = '#ff4400'; break;
+                case 'ice': glowColor = '#00ccff'; break;
+                case 'magic': glowColor = '#8800ff'; break;
+                case 'death': glowColor = '#333333'; break;
+                case 'volcano': glowColor = '#ff0000'; break;
+                default: glowColor = '#ffaa00';
+            }
+            
+            this.particles.push({
+                x: this.x,
+                y: this.y,
+                vx: 0,
+                vy: 0,
+                size: 30,
+                color: glowColor,
+                life: this.maxLife * 0.5,
+                alpha: 0.8,
+                isGlow: true
+            });
+        }
+        
+        // 添加冲击波
+        if (this.options.addShockwave !== false) {
+            this.particles.push({
+                x: this.x,
+                y: this.y,
+                vx: 0,
+                vy: 0,
+                size: 5,
+                maxSize: 60,
+                growthRate: 1,
+                color: 'rgba(255, 255, 255, 0.3)',
+                life: this.maxLife * 0.6,
+                alpha: 0.7,
+                isShockwave: true
+            });
+        }
+    }
+    
+    update(deltaTime) {
+        if (!this.isActive) return;
+        
+        // 更新生命周期
+        this.life += deltaTime;
+        if (this.life >= this.maxLife) {
+            this.isActive = false;
+            return;
+        }
+        
+        // 更新所有粒子
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const particle = this.particles[i];
+            
+            // 减少生命值
+            particle.life -= deltaTime;
+            
+            // 移除死亡的粒子
+            if (particle.life <= 0) {
+                this.particles.splice(i, 1);
+                continue;
+            }
+            
+            // 更新透明度
+            particle.alpha = particle.life / this.maxLife;
+            
+            // 如果是冲击波，增加大小
+            if (particle.isShockwave) {
+                particle.size += particle.growthRate * deltaTime / 16;
+                if (particle.size >= particle.maxSize) {
+                    particle.growthRate = 0;
+                }
+            } 
+            // 否则，正常移动粒子
+            else if (!particle.isGlow) {
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                
+                // 添加重力效果
+                if (this.options.gravity) {
+                    particle.vy += 0.05;
+                }
+                
+                // 添加阻力效果
+                if (this.options.resistance) {
+                    particle.vx *= 0.98;
+                    particle.vy *= 0.98;
+                }
+                
+                // 根据类型添加特殊效果
+                switch(this.type) {
+                    case 'fire':
+                        // 火焰粒子向上漂移
+                        particle.vy -= 0.03;
+                        // 随机左右漂移
+                        particle.vx += (Math.random() - 0.5) * 0.1;
+                        break;
+                    case 'ice':
+                        // 冰粒子有随机旋转
+                        const angle = Math.atan2(particle.vy, particle.vx);
+                        const speed = Math.sqrt(particle.vx*particle.vx + particle.vy*particle.vy);
+                        const newAngle = angle + (Math.random() - 0.5) * 0.2;
+                        particle.vx = Math.cos(newAngle) * speed;
+                        particle.vy = Math.sin(newAngle) * speed;
+                        break;
+                    case 'volcano':
+                        // 火山粒子受重力影响较大
+                        particle.vy += 0.15;  // 强重力
+                        
+                        // 随机产生烟雾效果（降低速度，增加大小）
+                        if (Math.random() < 0.05) {
+                            particle.vx *= 0.9;
+                            particle.vy *= 0.9;
+                            particle.size *= 1.05;  // 缓慢增大
+                        }
+                        
+                        // 随机改变颜色 - 模拟冷却效果
+                        if (Math.random() < 0.01 && particle.color.includes('ff')) {
+                            // 红色/橙色逐渐变为灰色
+                            particle.color = '#' + Math.floor(Math.random() * 4 + 3).toString(16).repeat(3);
+                        }
+                        break;
+                }
+            }
+        }
+    }
+    
+    draw(ctx) {
+        if (!this.isActive) return;
+        
+        // 保存上下文状态
+        ctx.save();
+        
+        // 绘制所有粒子
+        this.particles.forEach(particle => {
+            ctx.globalAlpha = particle.alpha;
+            
+            // 为发光粒子添加阴影
+            if (particle.isGlow) {
+                ctx.shadowColor = particle.color;
+                ctx.shadowBlur = particle.size;
+            }
+            
+            // 为冲击波绘制一个圆环
+            if (particle.isShockwave) {
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                ctx.strokeStyle = particle.color;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            } 
+            // 绘制普通粒子
+            else {
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                ctx.fillStyle = particle.color;
+                ctx.fill();
+            }
+            
+            // 重置阴影
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+        });
+        
+        // 恢复上下文状态
+        ctx.restore();
+    }
+    
+    // 判断爆炸是否完成
+    isFinished() {
+        return !this.isActive || this.particles.length === 0;
     }
 }
 
